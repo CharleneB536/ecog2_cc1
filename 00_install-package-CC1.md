@@ -10,10 +10,13 @@ sudo apt-get install -y liblzma-dev
 ```
 
     ## sudo: unable to resolve host 484e593b34a0: Name or service not known
-    ## Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
-    ## Hit:2 http://archive.ubuntu.com/ubuntu focal-updates InRelease
-    ## Hit:3 http://archive.ubuntu.com/ubuntu focal-backports InRelease
-    ## Hit:4 http://security.ubuntu.com/ubuntu focal-security InRelease
+    ## Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [109 kB]
+    ## Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
+    ## Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
+    ## Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [101 kB]
+    ## Get:5 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [871 kB]
+    ## Get:6 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [850 kB]
+    ## Fetched 2,045 kB in 1s (2,402 kB/s)
     ## Reading package lists...
     ## sudo: unable to resolve host 484e593b34a0: Name or service not known
     ## Reading package lists...
@@ -177,7 +180,7 @@ install_local("./structSSI_1.1.1.tar.gz")
     ## Warning in normalizePath(path): path[1]="./structSSI_1.1.1.tar.gz": No such file
     ## or directory
 
-    ## Error : Could not copy `./structSSI_1.1.1.tar.gz` to `/tmp/RtmpCm18dP/file6fed2ec233ec`
+    ## Error : Could not copy `./structSSI_1.1.1.tar.gz` to `/tmp/RtmpPgkVL2/file7ae45bbdff18`
 
 ## Installation Cran-packages
 
@@ -250,3 +253,16 @@ BiocManager::install("Biostrings")
     ##   KernSmooth, nlme
 
     ## Old packages: 'BiocStyle'
+
+## Installation BiocStyle
+
+``` r
+BiocManager::install("BiocStyle")
+```
+
+    ## Bioconductor version 3.12 (BiocManager 1.30.10), R 4.0.3 (2020-10-10)
+
+    ## Installing package(s) 'BiocStyle'
+
+    ## Installation path not writeable, unable to update packages: codetools,
+    ##   KernSmooth, nlme
