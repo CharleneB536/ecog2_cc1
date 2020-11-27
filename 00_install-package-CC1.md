@@ -10,13 +10,10 @@ sudo apt-get install -y liblzma-dev
 ```
 
     ## sudo: unable to resolve host 484e593b34a0: Name or service not known
-    ## Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [109 kB]
-    ## Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
-    ## Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
-    ## Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [101 kB]
-    ## Get:5 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [871 kB]
-    ## Get:6 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [850 kB]
-    ## Fetched 2,045 kB in 1s (2,402 kB/s)
+    ## Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+    ## Hit:2 http://security.ubuntu.com/ubuntu focal-security InRelease
+    ## Hit:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease
+    ## Hit:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease
     ## Reading package lists...
     ## sudo: unable to resolve host 484e593b34a0: Name or service not known
     ## Reading package lists...
@@ -49,7 +46,7 @@ BiocManager::install("dada2")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ## Installation phangorn
 
@@ -64,7 +61,7 @@ BiocManager::install("phangorn")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ## Installation decipher
 
@@ -79,7 +76,7 @@ BiocManager::install("DECIPHER")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ## Installation ggplot2
 
@@ -101,7 +98,7 @@ BiocManager::install("ggplot2")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ``` r
 library(ggplot2); packageVersion("ggplot2")
@@ -163,7 +160,7 @@ BiocManager::install("DESeq2")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ## Installation structSSI
 
@@ -180,7 +177,7 @@ install_local("./structSSI_1.1.1.tar.gz")
     ## Warning in normalizePath(path): path[1]="./structSSI_1.1.1.tar.gz": No such file
     ## or directory
 
-    ## Error : Could not copy `./structSSI_1.1.1.tar.gz` to `/tmp/RtmpPgkVL2/file7ae45bbdff18`
+    ## Error : Could not copy `./structSSI_1.1.1.tar.gz` to `/tmp/RtmpD3ncDz/file1b91183211d`
 
 ## Installation Cran-packages
 
@@ -231,7 +228,7 @@ BiocManager::install("phyloseq")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ``` r
 library(phyloseq); packageVersion("phyloseq")
@@ -252,7 +249,7 @@ BiocManager::install("Biostrings")
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
 
-    ## Old packages: 'BiocStyle'
+    ## Old packages: 'rlang'
 
 ## Installation BiocStyle
 
@@ -266,3 +263,116 @@ BiocManager::install("BiocStyle")
 
     ## Installation path not writeable, unable to update packages: codetools,
     ##   KernSmooth, nlme
+
+    ## Old packages: 'rlang'
+
+## Installation des packages pour Phyloseq
+
+``` r
+library("knitr")
+library("BiocStyle")
+.cran_packages <- c("ggplot2", "gridExtra")
+.bioc_packages <- c("dada2", "phyloseq", "DECIPHER", "phangorn")
+.inst <- .cran_packages %in% installed.packages()
+if(any(!.inst)) {
+   install.packages(.cran_packages[!.inst])
+}
+.inst <- .bioc_packages %in% installed.packages()
+if(any(!.inst)) {
+   source("http://bioconductor.org/biocLite.R")
+   biocLite(.bioc_packages[!.inst], ask = F)
+}
+# Load packages into session, and print package version
+sapply(c(.cran_packages, .bioc_packages), require, character.only = TRUE)
+```
+
+    ## Loading required package: gridExtra
+
+    ## Loading required package: dada2
+
+    ## Loading required package: Rcpp
+
+    ## Loading required package: DECIPHER
+
+    ## Loading required package: Biostrings
+
+    ## Loading required package: BiocGenerics
+
+    ## Loading required package: parallel
+
+    ## 
+    ## Attaching package: 'BiocGenerics'
+
+    ## The following objects are masked from 'package:parallel':
+    ## 
+    ##     clusterApply, clusterApplyLB, clusterCall, clusterEvalQ,
+    ##     clusterExport, clusterMap, parApply, parCapply, parLapply,
+    ##     parLapplyLB, parRapply, parSapply, parSapplyLB
+
+    ## The following object is masked from 'package:gridExtra':
+    ## 
+    ##     combine
+
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     IQR, mad, sd, var, xtabs
+
+    ## The following objects are masked from 'package:base':
+    ## 
+    ##     anyDuplicated, append, as.data.frame, basename, cbind, colnames,
+    ##     dirname, do.call, duplicated, eval, evalq, Filter, Find, get, grep,
+    ##     grepl, intersect, is.unsorted, lapply, Map, mapply, match, mget,
+    ##     order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
+    ##     rbind, Reduce, rownames, sapply, setdiff, sort, table, tapply,
+    ##     union, unique, unsplit, which.max, which.min
+
+    ## Loading required package: S4Vectors
+
+    ## Loading required package: stats4
+
+    ## 
+    ## Attaching package: 'S4Vectors'
+
+    ## The following object is masked from 'package:base':
+    ## 
+    ##     expand.grid
+
+    ## Loading required package: IRanges
+
+    ## 
+    ## Attaching package: 'IRanges'
+
+    ## The following object is masked from 'package:phyloseq':
+    ## 
+    ##     distance
+
+    ## Loading required package: XVector
+
+    ## 
+    ## Attaching package: 'Biostrings'
+
+    ## The following object is masked from 'package:base':
+    ## 
+    ##     strsplit
+
+    ## Loading required package: RSQLite
+
+    ## Loading required package: phangorn
+
+    ## Loading required package: ape
+
+    ## 
+    ## Attaching package: 'ape'
+
+    ## The following object is masked from 'package:Biostrings':
+    ## 
+    ##     complement
+
+    ##   ggplot2 gridExtra     dada2  phyloseq  DECIPHER  phangorn 
+    ##      TRUE      TRUE      TRUE      TRUE      TRUE      TRUE
+
+``` r
+##   ggplot2 gridExtra     dada2  phyloseq  DECIPHER  phangorn 
+##      TRUE      TRUE      TRUE      TRUE      TRUE      TRUE
+set.seed(100)
+```
