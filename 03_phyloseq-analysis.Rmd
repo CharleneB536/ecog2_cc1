@@ -16,6 +16,7 @@ ps = readRDS(ps_connect)
 ps
 ```
 
+
 # Bonus : Passage à Phyloseq
 
 ```{r}
@@ -95,6 +96,257 @@ Rien ne ressort de façon évidente au niveau de la distribution taxonomique des
 
 
 # Utilisation de Phyloseq
+
+```{r}
+set.seed(100)
+```
+
+
+
+
+# Tutoriel Phyloseq
+
+On définit la variable du chemin suivant pour qu'il va vers le répertoire extrait sur R :
+
+```{r}
+miseq_path <- "./MiSeq_SOP" # CHANGE to the directory containing the fastq files after unzipping.
+list.files(miseq_path)
+```
+
+
+## Filtrage et rabotage 
+
+Nous commençons par filtrer les lectures de faible qualité afin de les réduire à une longueur constante. Bien que les paramètres de filtrage et de rognage généralement recommandés servent de point de départ, il n’y a pas deux ensembles de données identiques et il est donc toujours utile d’inspecter la qualité des données avant de continuer.
+
+Tout d’abord, nous lisons les noms des fichiers fastq, et effectuons une manipulation des chaînes pour obtenir les listes des fichiers fastq forward et reverse dans l’ordre correspondant :
+
+
+```{r}
+# Sort ensures forward/reverse reads are in same order
+fnFs <- sort(list.files(miseq_path, pattern="_R1_001.fastq"))
+fnRs <- sort(list.files(miseq_path, pattern="_R2_001.fastq"))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sampleNames <- sapply(strsplit(fnFs, "_"), `[`, 1)
+# Specify the full path to the fnFs and fnRs
+fnFs <- file.path(miseq_path, fnFs)
+fnRs <- file.path(miseq_path, fnRs)
+fnFs[1:3]
+```
+
+```{r}
+fnRs[1:3]
+```
+
+La plupart des données de séquençage Illumina montrent une tendance à la baisse de la qualité moyenne vers la fin des lectures de séquençage.
+
+Les deux premiers forward se lisent comme suit :
+
+
+```{r}
+library(dada2)
+plotQualityProfile(fnFs[1:2])
+```
+
+Les deux premiers reversent se lisent comme suit :
+
+```{r}
+plotQualityProfile(fnRs[1:2])
+```
+
+Nous pouvons voir que les lectures forward conservent une haute qualité tout au long, tandis que la qualité des lectures reverse diminue considérablement à la position 160 environ. Par conséquent, nous choisissons de tronquer les lectures forward à la position 245, et les lectures reverse à la position 160. Nous choisissons également de découper les 10 premiers nucléotides de chaque lecture sur la base d’observations empiriques dans de nombreux ensembles de données Illumina puisque ces positions de base sont particulièrement susceptibles de contenir des erreurs pathologiques.
+
+
+Nous définissons ensuite les noms des fichiers fastq.gz filtrés :
+
+```{r}
+filt_path <- file.path(miseq_path, "filtered") # Place filtered files in filtered/ subdirectory
+if(!file_test("-d", filt_path)) dir.create(filt_path)
+filtFs <- file.path(filt_path, paste0(sampleNames, "_F_filt.fastq.gz"))
+filtRs <- file.path(filt_path, paste0(sampleNames, "_R_filt.fastq.gz"))
+```
+Nous combinons ces paramètres de rognage avec des paramètres de filtrage standard, le plus important étant l’exécution d’un maximum de 2 erreurs attendues par lecture. Le découpage et le filtrage sont effectués conjointement sur des lectures appariées, c.-à-d. que les deux lectures doivent passer le filtre pour que la paire passe.
+
+
+Les lectures forward et reverse sont ainsi filtrées avec la fonction filterAndTrim : 
+
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+head(out)
+```
+
+## Inférer les variantes de séquence
+
+Après filtrage, le séquençage typique d’amplicon se lit en unités taxonomiques opérationnelles (OTU) : groupes de lectures de séquençage qui diffèrent en dessous d’un seuil de dissemblance. Ici, nous utilisons plutôt la méthode DADA2 à haute résolution pour inférer exactement les variantes de séquence amplicon (ASVs), sans imposer de menace arbitraire, et résoudre ainsi les variantes qui diffèrent aussi peu que d’un nucléotide.
+
+Les données de séquence sont importées dans R à partir de fichiers fastq démultiplexés (c.-à-d. un fastq pour chaque échantillon) et simultanément déréglées pour supprimer la redondance. Nous nommons les objets derep-class résultants par leur nom d’échantillon.
+
+### Déréplication
+
+La déréplication combine toutes les lectures de séquence identiques en «séquences uniques» avec une «abondance» correspondante : le nombre de lectures avec cette séquence unique. La déréplication réduit considérablement le temps de calcul en éliminant les comparaisons redondantes.
+
+```{r}
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+# Name the derep-class objects by the sample names
+names(derepFs) <- sampleNames
+names(derepRs) <- sampleNames
+```
+
+La méthode DADA2 s’appuie sur un modèle paramétré d’erreurs de substitution pour distinguer les erreurs de séquençage de la variation biologique réelle.
+
+L’apprentissage des paramètres est computationnellement intensif, car il nécessite de multiples itérations de l’algorithme d’inférence de séquence, et il est donc souvent utile d’estimer les taux d’erreur à partir d’un sous-ensemble de données (suffisamment important).
+
+```{r}
+errF <- learnErrors(filtFs, multithread=TRUE)
+```
+
+```{r}
+errR <- learnErrors(filtRs, multithread=TRUE)
+```
+
+```{r}
+plotErrors(errF)
+plotErrors(errR)
+```
+
+
+Afin de vérifier que les taux d'erreur ont été raisonnablement bien estimés, nous inspectons l'ajustement entre les taux d'erreur observés (points noirs) et les taux d'erreur ajustés (lignes noires) de la figure 1 . Ces figures montrent les fréquences de chaque type de transition en fonction de la qualité.
+
+Comme cet ensemble de données n’est pas particulièrement important, nous effectuons des inférences groupées (pour les lectures forward puis les lectures reverse). Depuis la version 1.2, multithreading peut maintenant être activé avec les arguments multithread = TRUE, ce qui accélère considérablement cette étape.
+
+```{r}
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+```
+
+
+```{r}
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+```
+
+Inspection de l’objet de classe Dada retourné par Dada :
+
+
+```{r}
+dadaFs[[1]]
+```
+
+L'algorithme DADA2 a déduit 128 variantes de séquences réelles à partir des séquences uniques de 1979 dans le premier échantillon. L’objet dada-class contient plusieurs diagnostics sur la qualité de chaque variante de séquence inférée.
+
+L’étape d’inférence de la séquence DADA2 a éliminé (presque) toutes les erreurs de substitution et d’indel des données. 
+
+Nous fusionnons maintenant les séquences forward et reverse inférées, supprimant les séquences appariées qui ne se chevauchent pas parfaitement comme un contrôle final contre les erreurs résiduelles.
+
+## Construction d'une table de séquences et élimination des chimères
+
+La méthode DADA2 produit un tableau séquentiel qui est un analogue à plus haute résolution de la «table OTU» commune, c.-à-d. un tableau de caractéristiques des échantillons par séquence évaluée par le nombre de fois que chaque séquence a été observée dans chaque échantillon.
+
+```{r}
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs)
+```
+
+```{r}
+seqtabAll <- makeSequenceTable(mergers[!grepl("Mock", names(mergers))])
+table(nchar(getSequences(seqtabAll)))
+```
+
+Nous supprimons maintenant les séquences chimériques en comparant chaque séquence inférée aux autres dans le tableau, et en supprimant celles qui peuvent être reproduites en assemblant deux séquences plus abondantes.
+
+
+```{r}
+seqtabNoC <- removeBimeraDenovo(seqtabAll)
+```
+
+Bien que les nombres exacts varient considérablement selon les conditions expérimentales, il est typique que les chimères comprennent une fraction substantielle des variantes de séquence inférées, mais seulement une petite fraction de toutes les lectures.
+Les chimères représentent environ 22% des variants de séquence déduits, mais ces variants ne représentent qu'environ 4% de la séquence totale lue.
+
+
+## Assignation d'une taxonomie
+
+L’un des avantages d’utiliser des locus marqueurs bien classés comme le gène de l’ARNr 16S est la capacité de classer taxonomiquement les variantes de séquence. Le paquet dada2 implémente la méthode naïve du classificateur bayésien à cette fin. 
+Ce classificateur compare les variantes de séquence à un ensemble de séquences d’entraînement classifiées, et ici nous utilisons l’ensemble d’entraînement RDP v16.
+
+
+On importe maintenant des nouvelles données pour réaliser l'assignation d'une taxonomie à différentes familles bactériennes :
+
+```{bash}
+wget https://zenodo.org/record/801828/files/rdp_train_set_16.fa.gz
+```
+
+Dada2 contient des fastas de formation formatés pour l’ensemble de formation RDP, GreenGenes regroupés à 97% d'identité, et la base de données de référence Silva disponible. Pour la taxonomie fongique, les fichiers de version General Fasta de la base de données UNITE ITS peuvent être utilisés tels quels. Pour suivre ce flux de travail, téléchargez le fichier rdp_train_set_16.fa.gz et placez-le dans le répertoire contenant les fichiers fastq.
+
+```{r}
+fastaRef <- "./rdp_train_set_16.fa.gz"
+taxTab <- assignTaxonomy(seqtabNoC, refFasta = fastaRef, multithread=TRUE)
+unname(head(taxTab))
+```
+
+## Construction d'un arbre phylogénétique
+
+La relation phylogénétique est couramment utilisée pour éclairer les analyses en aval, en particulier le calcul des distances phylogénétiques entre les communautés microbiennes. La méthode d’inférence de séquence DADA2 est sans référence, donc nous devons construire l’arbre phylogénétique reliant les variantes de novo de séquence inférées. Nous commençons par effectuer un alignement multiple en utilisant le package DECIPHER :
+
+```{r}
+library(DECIPHER)
+seqs <- getSequences(seqtabNoC)
+names(seqs) <- seqs # This propagates to the tip labels of the tree
+alignment <- AlignSeqs(DNAStringSet(seqs), anchor=NA,verbose=FALSE)
+```
+
+
+Le package phangorn R est ensuite utilisé pour construire un arbre phylogénétique. Ici, nous construisons d’abord un arbre de neighbor-joining, puis nous ajustons un arbre de probabilité maximum GTR+G+I (Generalized time-reversible with Gamma rate variation) en utilisant l’arbre neighbor-joining comme point de départ.
+
+```{r}
+library(phangorn)
+phangAlign <- phyDat(as(alignment, "matrix"), type="DNA")
+dm <- dist.ml(phangAlign)
+treeNJ <- NJ(dm) # Note, tip order != sequence order
+fit = pml(treeNJ, data=phangAlign)
+fitGTR <- update(fit, k=4, inv=0.2)
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+        rearrangement = "stochastic", control = pml.control(trace = 0))
+detach("package:phangorn", unload=TRUE)
+```
+
+
+
+## Combiner les données dans un objet Phyloseq
+
+Le paquet phyloseq organise et synthétise les différents types de données d’une expérience typique de séquençage d’amplicon en un seul objet de données qui peut être facilement manipulé. Le dernier bit d’information nécessaire est l’échantillon de données contenues dans un fichier . csv. Il peut être téléchargé à partir de github :
+
+```{r}
+samdf <- read.csv("https://raw.githubusercontent.com/spholmes/F1000_workflow/master/data/MIMARKS_Data_combined.csv",header=TRUE)
+samdf$SampleID <- paste0(gsub("00", "", samdf$host_subject_id), "D", samdf$age-21)
+samdf <- samdf[!duplicated(samdf$SampleID),] # Remove dupicate entries for reverse reads
+rownames(seqtabAll) <- gsub("124", "125", rownames(seqtabAll)) # Fix discrepancy
+all(rownames(seqtabAll) %in% samdf$SampleID) # TRUE
+```
+
+
+```{r}
+rownames(samdf) <- samdf$SampleID
+keep.cols <- c("collection_date", "biome", "target_gene", "target_subfragment",
+"host_common_name", "host_subject_id", "age", "sex", "body_product", "tot_mass",
+"diet", "family_relationship", "genotype", "SampleID") 
+samdf <- samdf[rownames(seqtabAll), keep.cols]
+```
+
+La série complète de données pour cette étude – le tableau des caractéristiques des échantillons par séquence, les métadonnées des échantillons, les taxonomies des séquences et l’arbre phylogénétique – peuvent maintenant être combinés en un seul objet
+
+```{r}
+ps <- phyloseq(otu_table(seqtabNoC, taxa_are_rows=FALSE), 
+               sample_data(samdf), 
+               tax_table(taxTab),phy_tree(fitGTR$tree))
+ps <- prune_samples(sample_names(ps) != "Mock", ps) # Remove mock sample
+ps
+```
+## Chargement des données
+
+```{r}
+ps_connect <-url("https://raw.githubusercontent.com/spholmes/F1000_workflow/master/data/ps.rds")
+ps = readRDS(ps_connect)
+ps
+```
 
 
 ## Filtration taxonomique
@@ -214,26 +466,6 @@ ps3 = tax_glom(ps2, "Genus", NArm = TRUE)
 
 Si la taxonomie n’est pas disponible ou n’est pas fiable, l’agglomération arborescente est une solution de rechange « sans taxonomie » pour combiner des caractéristiques de données correspondant à des taxons étroitement apparentés. Dans ce cas, plutôt que le rang taxonomique, l’utilisateur spécifie une hauteur d’arbre correspondant à la distance phylogénétique entre les caractéristiques qui devrait définir leur groupement. Ceci est très similaire à ce qu'on appelle « l'OTU Clustering », sauf que dans de nombreux algorithmes de OTU Clustering, la distance de séquence utilisée n’a pas la même (ou aucune) définition évolutive.
 
-```{r}
-library(phangorn)
-library(DECIPHER)
-library(dada2)
-seqs <- getSequences(seqtab.nochim)
-names(seqs) <- seqs # This propagates to the tip labels of the tree
-alignment <- AlignSeqs(DNAStringSet(seqs), anchor=NA,verbose=FALSE)
-phangAlign <- phyDat(as(alignment, "matrix"), type="DNA")
-dm <- dist.ml(phangAlign)
-treeNJ <- NJ(dm) # Note, tip order != sequence order
-fit = pml(treeNJ, data=phangAlign)
-fitGTR <- update(fit, k=4, inv=0.2)
-fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
-        rearrangement = "stochastic", control = pml.control(trace = 0))
-detach("package:phangorn", unload=TRUE)
-```
-```{r}
-library(gridExtra)
-grid.arrange(nrow = 1, p2tree, p3tree, p4tree)
-```
 
 ```{r}
 h1 = 0.4
@@ -257,10 +489,7 @@ p4tree = plot_tree(ps4, method = "treeonly",
   theme(plot.title = element_text(size = multiPlotTitleTextSize))
 ```
 
-```{r}
-# group plots together
-grid.arrange(nrow = 1, p2tree, p3tree, p4tree)
-```
+
 
 Ces figures montrent les différents types d'agglomération. On peut voir l'arbre original à gauche, l'agglomération taxonomique au rang du genre au milieu et l'agglomération phylogénétique à une distance fixe de 0,4 à droite.
 
@@ -301,6 +530,9 @@ ps3ra = transform_sample_counts(ps3, function(x){x / sum(x)})
 Maintenant nous traçons les valeurs d’abondance avant et après la transformation :
 
 ```{r}
+library(ggplot2)
+library(phyloseq)
+library(gridExtra)
 plotBefore = plot_abundance(ps3,"")
 plotAfter = plot_abundance(ps3ra,"")
 # Combine each plot into one graphic.
@@ -324,6 +556,30 @@ Ce graphique montre les abondances relatives de Lactobacillales, regroupées par
 
 
 Nous appuyons ces affirmations en illustrant plusieurs analyses sur les données de souris (cf data import). Nous expérimentons plusieurs types d’ordination avant de passer à des tests et à une modélisation plus formels, expliquant les paramètres dans lesquels les différents points de vue sont les plus appropriés. Enfin, nous fournissons des exemples d’analyses de données multitables, en utilisant une étude dans laquelle des mesures d’abondance métabolique et microbienne ont été recueillies sur les mêmes échantillons, pour démontrer que le flux de travail général présenté ici peut être adapté au paramètre multitable.
+
+```{r}
+.cran_packages <- c( "shiny","miniUI", "caret", "pls", "e1071", "ggplot2", "randomForest", "dplyr", "ggrepel", "nlme", "devtools",
+                  "reshape2", "PMA", "structSSI", "ade4",
+                  "ggnetwork", "intergraph", "scales")
+.github_packages <- c("jfukuyama/phyloseqGraphTest")
+.bioc_packages <- c("genefilter", "impute")
+# Install CRAN packages (if not already installed)
+.inst <- .cran_packages %in% installed.packages()
+if (any(!.inst)){
+  install.packages(.cran_packages[!.inst],repos = "http://cran.rstudio.com/")
+}
+.inst <- .github_packages %in% installed.packages()
+if (any(!.inst)){
+  devtools::install_github(.github_packages[!.inst])
+}
+
+.inst <- .bioc_packages %in% installed.packages()
+if(any(!.inst)){
+  source("http://bioconductor.org/biocLite.R")
+  biocLite(.bioc_packages[!.inst])
+}
+```
+
 
 ## Pré-traitement
 
@@ -355,7 +611,6 @@ evals <- out.wuf.log$values$Eigenvalues
 plot_ordination(pslog, out.wuf.log, color = "age_binned") +
   labs(col = "Binned Age") +
   coord_fixed(sqrt(evals[2] / evals[1]))
-
 ```
 Analyse par PCoA avec la dissimilarité de Bray-Curtis.La figure represente l'analyse d'ordination exploratoire avec le log des abondances. Il y a la presence de quelques valeurs aberrantes. 
 
@@ -492,6 +747,7 @@ Nous pouvons maintenant effectuer une PCA et étudier le biplot résultant, repr
 
 ```{r}
 library(ade4)
+library(base)
 ranks_pca <- dudi.pca(abund_ranks, scannf = F, nf = 3)
 row_scores <- data.frame(li = ranks_pca$li,
                          SampleID = rownames(abund_ranks))
@@ -570,9 +826,7 @@ ggplot() +
   coord_fixed(sqrt(ps_ccpna$CCA$eig[2] / ps_ccpna$CCA$eig[1])*0.45   ) +
   theme(panel.border = element_rect(color = "#787878", fill = alpha("white", 0)))
 ```
-```{r}
-rlang::last_error()
-```
+
 
 
 Ce graphique montre les scores des souris et des bactéries générés par CCpnA. 
@@ -687,10 +941,6 @@ Pour mieux comprendre le modèle de forêt aléatoire ajusté, nous identifions 
 
 Phyloseq a une fonctionnalité pour créer des graphiques basés sur le seuil d’une matrice de distance, et les réseaux résultants peuvent être tracés à l’aide du package ggnetwork. Ce package se superpose à la syntaxe ggplot, donc vous pouvez utiliser la fonction ggplot sur un objet igraph et ajouter la fonction geoms pour tracer le réseau. Pour pouvoir colorer les nœuds ou les bords d’une certaine façon, nous devons ajouter ces attributs à l’objet igraph. Ci-dessous, nous créons un réseau en multipliant la dissimilarité de Jaccard (la distance par défaut pour la fonction make_network) à . 35. Puis nous ajoutons un attribut aux sommets indiquant de quelle souris provient l’échantillon et dans quelle portée se trouve la souris. Ensuite, nous pouvons tracer le réseau avec la coloration par souris et la forme par portée.
 
-```{r}
-net_graph <- ggnetwork(net)
-```
-
 
 ```{r}
 library("phyloseqGraphTest")
@@ -700,6 +950,9 @@ net <- make_network(ps, max.dist=0.35)
 sampledata <- data.frame(sample_data(ps))
 V(net)$id <- sampledata[names(V(net)), "host_subject_id"]
 V(net)$litter <- sampledata[names(V(net)), "family_relationship"]
+
+net_graph <- ggnetwork(net)
+
 ggplot(net_graph, aes(x = x, y = y, xend = xend, yend = yend), layout = "fruchtermanreingold") +
   geom_edges(color = "darkgray") +
   geom_nodes(aes(color = id, shape = litter),  size = 3 ) +
