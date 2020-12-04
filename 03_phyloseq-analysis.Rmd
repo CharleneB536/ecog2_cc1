@@ -5,7 +5,7 @@ output:
   html_notebook: default
 ---
 
-##A ne pas prendre en compte
+## A ne pas prendre en compte
 
 ```{r}
 load("02_data-analysis-with-DADA2")
